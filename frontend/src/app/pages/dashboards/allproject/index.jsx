@@ -15,7 +15,7 @@ import {
 import { Page } from "components/shared/Page";
 import { TextEditor } from "components/shared/form/TextEditor";
 import { htmlToDelta } from "utils/quillUtils";
-import { getStoredUserRole } from "utils/authUser";
+import { getStoredUserRole, getStoredUserName } from "utils/authUser";
 import { BulkTaskModal } from "../home/BulkTaskModal";
 import {
   addComment,
@@ -62,6 +62,15 @@ const KANBAN_COLUMNS = [
 const getProjectName = (task) => task.project_name || task.project || "General";
 
 const getLeadName = (task) => task.assigned_user || task.lead || "Unassigned";
+
+const isOverdue = (task) => {
+  if (task.status === "DONE" || !task.due_date) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(task.due_date);
+  due.setHours(0, 0, 0, 0);
+  return due < today;
+};
 
 function Modal({ open, title, subtitle, onClose, children, widthClass = "max-w-6xl" }) {
   if (!open) return null;
@@ -305,6 +314,7 @@ export default function AllProject() {
   const [comment, setComment] = useState("");
   const [openMaster, setOpenMaster] = useState(false);
   const [selectedMasterProject, setSelectedMasterProject] = useState("");
+  const [taskToDelete, setTaskToDelete] = useState(null);
 
   const loadData = async () => {
     try {
@@ -411,17 +421,23 @@ export default function AllProject() {
                       </option>
                     ))}
                   </select>
-                  <select
-                    value={selectedEmployee}
-                    onChange={(e) => setSelectedEmployee(e.target.value)}
-                    className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none"
-                  >
-                    {employeeOptions.map((employee) => (
-                      <option key={employee} value={employee}>
-                        {employee === "ALL" ? "Select Employee" : employee}
-                      </option>
-                    ))}
-                  </select>
+                  {isAdmin ? (
+                    <select
+                      value={selectedEmployee}
+                      onChange={(e) => setSelectedEmployee(e.target.value)}
+                      className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none"
+                    >
+                      {employeeOptions.map((employee) => (
+                        <option key={employee} value={employee}>
+                          {employee === "ALL" ? "Select Employee" : employee}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="flex h-11 items-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-700">
+                      {getStoredUserName() || "Employee"}
+                    </div>
+                  )}
                   <div className="relative min-w-[260px] flex-1">
                     <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
@@ -511,15 +527,24 @@ export default function AllProject() {
                                 <div className="line-clamp-2 text-[15px] font-semibold text-slate-900">
                                   {task.title || task.name}
                                 </div>
-                                <div className="mt-2 text-sm text-slate-500">{task.project}</div>
+                                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                  <span className="text-sm text-slate-500">{task.project}</span>
+                                  {task.comment_count > 0 && (
+                                    <span className="flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600" title={`${task.comment_count} comments`}>
+                                      💬 {task.comment_count}
+                                    </span>
+                                  )}
+                                  {isOverdue(task) && (
+                                    <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-red-600">
+                                      OVERDUE
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  deleteTask(task.id).then(() => {
-                                    setTasks((prev) => prev.filter((item) => item.id !== task.id));
-                                    toast.success("Task deleted successfully");
-                                  });
+                                  setTaskToDelete(task.id);
                                 }}
                                 className="rounded-full p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
                               >
@@ -572,7 +597,19 @@ export default function AllProject() {
                           <td className="px-6 py-4">
                             <button onClick={() => openTask(task)} className="text-left">
                               <div className="font-semibold text-slate-900">{task.title || task.name}</div>
-                              <div className="mt-1 text-xs text-slate-500">Task details</div>
+                              <div className="mt-1 flex items-center gap-2">
+                                <span className="text-xs text-slate-500">Task details</span>
+                                {task.comment_count > 0 && (
+                                  <span className="flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600" title={`${task.comment_count} comments`}>
+                                    💬 {task.comment_count}
+                                  </span>
+                                )}
+                                {isOverdue(task) && (
+                                  <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-red-600">
+                                    OVERDUE
+                                  </span>
+                                )}
+                              </div>
                             </button>
                           </td>
                           <td className="px-6 py-4">
@@ -595,10 +632,10 @@ export default function AllProject() {
                           <td className="px-6 py-4 text-slate-600">{task.project}</td>
                           <td className="px-6 py-4">
                             <button
-                              onClick={() => deleteTask(task.id).then(() => {
-                                setTasks((prev) => prev.filter((item) => item.id !== task.id));
-                                toast.success("Task deleted successfully");
-                              })}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTaskToDelete(task.id);
+                              }}
                               className="text-slate-400 transition hover:text-rose-500"
                             >
                               <Trash2 size={16} />
@@ -670,16 +707,21 @@ export default function AllProject() {
             if (!activeTask || !comment.trim()) return;
             await addComment(activeTask.id, comment.trim());
             const res = await getCommentsByTask(activeTask.id);
-            setComments(res?.data?.comments || []);
+            const newComments = res?.data?.comments || [];
+            setComments(newComments);
             setComment("");
+            // Update comment_count in tasks state so UI reflects immediately
+            setTasks((prev) =>
+              prev.map((t) =>
+                t.id === activeTask.id
+                  ? { ...t, comment_count: newComments.length }
+                  : t
+              )
+            );
             toast.success("Comment added");
           }}
-          onDelete={async (taskId) => {
-            await deleteTask(taskId);
-            setTasks((prev) => prev.filter((item) => item.id !== taskId));
-            setOpenTaskModal(false);
-            setActiveTask(null);
-            toast.success("Task deleted successfully");
+          onDelete={(taskId) => {
+            setTaskToDelete(taskId);
           }}
         />
 
@@ -690,6 +732,27 @@ export default function AllProject() {
           onChangeProject={setSelectedMasterProject}
           onClose={() => setOpenMaster(false)}
         />
+
+        {taskToDelete && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+              <h3 className="text-lg font-bold text-slate-900">Delete Task</h3>
+              <p className="mt-2 text-sm text-slate-500">Are you sure you want to delete this task? This action cannot be undone.</p>
+              <div className="mt-6 flex justify-end gap-3">
+                <button onClick={() => setTaskToDelete(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">Cancel</button>
+                <button onClick={() => {
+                  deleteTask(taskToDelete).then(() => {
+                    setTasks((prev) => prev.filter((item) => item.id !== taskToDelete));
+                    toast.success("Task deleted successfully");
+                    setTaskToDelete(null);
+                    setOpenTaskModal(false);
+                    setActiveTask(null);
+                  });
+                }} className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 transition">Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Page>
   );

@@ -260,6 +260,17 @@ export default function Listing() {
     }, {});
   }, [tasks]);
 
+  const projectsByEmployee = useMemo(() => {
+    return tasks.reduce((acc, task) => {
+      const name = task.assigned_user || task.lead || task.employee || "";
+      const projectName = task.project_name || task.project || task.projectName || "General";
+      if (!name) return acc;
+      if (!acc[name]) acc[name] = new Set();
+      acc[name].add(projectName);
+      return acc;
+    }, {});
+  }, [tasks]);
+
   const filteredEmployees = useMemo(() => {
     const q = normalize(search);
     return employees.filter((employee) => {
@@ -357,8 +368,10 @@ export default function Listing() {
                   <thead className="bg-slate-50 text-slate-600">
                     <tr>
                       <th className="px-6 py-4 text-left font-semibold">Name</th>
+                      <th className="px-6 py-4 text-left font-semibold">Role</th>
                       <th className="px-6 py-4 text-left font-semibold">Email</th>
                       <th className="px-6 py-4 text-left font-semibold">Phone</th>
+                      <th className="px-6 py-4 text-left font-semibold">Projects</th>
                       <th className="px-6 py-4 text-left font-semibold">Status</th>
                       <th className="px-6 py-4 text-left font-semibold">Actions</th>
                     </tr>
@@ -379,8 +392,28 @@ export default function Listing() {
                             {taskCounts[employee.name] || 0} active tasks
                           </div>
                         </td>
+                        <td className="px-6 py-4">
+                          {employee.role ? (
+                            <span className="rounded-md bg-indigo-50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-indigo-600">
+                              {employee.role}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">-</span>
+                          )}
+                        </td>
                         <td className="px-6 py-4 text-slate-600">{employee.email}</td>
                         <td className="px-6 py-4 text-slate-600">{employee.phone || "-"}</td>
+                        <td className="px-6 py-4">
+                          <select className="h-9 w-full min-w-[130px] rounded-lg border border-slate-200 bg-slate-50 px-2 text-[13px] text-slate-700 outline-none">
+                            {projectsByEmployee[employee.name] && Array.from(projectsByEmployee[employee.name]).length > 0 ? (
+                              Array.from(projectsByEmployee[employee.name]).map((proj) => (
+                                <option key={proj} value={proj}>{proj}</option>
+                              ))
+                            ) : (
+                              <option value="" disabled>No Projects</option>
+                            )}
+                          </select>
+                        </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
                             <Switch

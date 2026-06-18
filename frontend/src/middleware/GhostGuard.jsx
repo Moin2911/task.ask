@@ -10,10 +10,15 @@ import { HOME_PATH, REDIRECT_URL_KEY } from "constants/app.constant";
 export default function GhostGuard() {
   const outlet = useOutlet();
   const location = useLocation();
-  const { isAuthenticated } = useAuthContext();
+  const { isAuthenticated, user } = useAuthContext();
 
   const redirect = new URLSearchParams(location.search).get(REDIRECT_URL_KEY);
   const normalizedRedirect = redirect?.trim();
+
+  let defaultPath = HOME_PATH;
+  if (user?.role === 'developer') {
+    defaultPath = '/dashboards/allproject';
+  }
 
   const targetPath =
     normalizedRedirect &&
@@ -22,7 +27,7 @@ export default function GhostGuard() {
     normalizedRedirect.startsWith("/") &&
     normalizedRedirect !== "/"
       ? normalizedRedirect
-      : HOME_PATH;
+      : defaultPath;
 
   if (isAuthenticated) {
     return <Navigate to={targetPath} replace />;

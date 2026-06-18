@@ -15,6 +15,7 @@ import { createProject, getProjects, deleteProject } from "app/services/projects
 import { getEmployees } from "app/services/employees";
 import { createTask, getTaskHistory, getTasksPage } from "app/services/tasks";
 import { createNote, deleteNote, getNotes, updateNote } from "app/services/notes";
+import { getStoredUserRole } from "utils/authUser";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -299,6 +300,13 @@ export default function Home() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  useEffect(() => {
+    const role = getStoredUserRole();
+    if (role === "developer") {
+      navigate("/dashboards/allproject", { replace: true });
+    }
+  }, [navigate]);
+
   const [projects, setProjects] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -317,6 +325,35 @@ export default function Home() {
   const [inlineNoteText, setInlineNoteText] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
   const [creatingNote, setCreatingNote] = useState(false);
+  const [draggedNote, setDraggedNote] = useState(null);
+
+  const handleDragStart = (e, note) => {
+    setDraggedNote(note);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+
+  const handleDrop = (e, targetNote) => {
+    e.preventDefault();
+    if (!draggedNote || draggedNote.id === targetNote.id) return;
+
+    setNotes((prevNotes) => {
+      const newNotes = [...prevNotes];
+      const draggedIndex = newNotes.findIndex((n) => n.id === draggedNote.id);
+      const targetIndex = newNotes.findIndex((n) => n.id === targetNote.id);
+
+      if (draggedIndex !== -1 && targetIndex !== -1) {
+        const [movedItem] = newNotes.splice(draggedIndex, 1);
+        newNotes.splice(targetIndex, 0, movedItem);
+      }
+      return newNotes;
+    });
+    setDraggedNote(null);
+  };
 
   const queryView = new URLSearchParams(location.search).get("view");
 
@@ -486,6 +523,10 @@ export default function Home() {
 
   const dashboardEmployees = employeesWithStats.slice(0, 10);
 
+  if (getStoredUserRole() === "developer") {
+    return null;
+  }
+
   return (
     <Page title="Developer Directory">
       <div className="min-h-screen bg-[#f7f9fc] text-slate-900">
@@ -505,11 +546,10 @@ export default function Home() {
             <div className="px-3">
               <button
                 onClick={() => setView("dashboard")}
-                className={`flex w-full items-center justify-start rounded-xl px-4 py-3 text-left text-sm font-medium transition ${
-                  view === "dashboard"
+                className={`flex w-full items-center justify-start rounded-xl px-4 py-3 text-left text-sm font-medium transition ${view === "dashboard"
                     ? "bg-blue-600 text-white shadow-sm"
                     : "text-slate-700 hover:bg-slate-50"
-                }`}
+                  }`}
               >
                 Dashboard
               </button>
@@ -613,17 +653,17 @@ export default function Home() {
 
                 <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
                   <div className="space-y-5">
-                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <div className="columns-1 gap-4 xl:columns-2">
                       {filteredProjects.map((project) => {
                         const projectNotes = projectCardTasks(project.name);
                         const showComposer = inlineNoteProject === project.name;
-                        
+
                         if (projectNotes.length === 0 && !showComposer) return null;
 
                         return (
                           <div
                             key={project.id}
-                            className="rounded-xl border border-slate-200 bg-white shadow-sm"
+                            className="mb-4 inline-block w-full break-inside-avoid rounded-xl border border-slate-200 bg-white shadow-sm"
                           >
                             <div className="flex items-center justify-between px-4 pb-2 pt-4">
                               <h3 className="text-[14px] font-bold text-slate-800">
@@ -663,15 +703,19 @@ export default function Home() {
                             <div className="space-y-2 px-4 pb-4 pt-1">
                               {showComposer ? (
                                 <div className="mb-2 flex gap-2">
-                                  <input
+                                  <textarea
                                     value={inlineNoteText}
                                     onChange={(e) =>
                                       setInlineNoteText(e.target.value)
                                     }
                                     placeholder="Type note and press Enter..."
-                                    className="h-9 flex-1 rounded-md border border-blue-300 px-3 text-[13px] outline-none focus:ring-2 focus:ring-blue-100"
+                                    className="min-h-[36px] w-full flex-1 resize-none overflow-hidden rounded-md border border-blue-300 px-3 py-2 text-[13px] outline-none focus:ring-2 focus:ring-blue-100"
+                                    onInput={(e) => {
+                                      e.target.style.height = "auto";
+                                      e.target.style.height = `${e.target.scrollHeight}px`;
+                                    }}
                                     onKeyDown={(e) => {
-                                      if (e.key === "Enter") {
+                                      if (e.key === "Enter" && !e.shiftKey) {
                                         e.preventDefault();
                                         handleInlineNoteSubmit(project.name);
                                       }
@@ -693,16 +737,24 @@ export default function Home() {
                                   return (
                                     <div
                                       key={note.id}
+                                      draggable
+                                      onDragStart={(e) => handleDragStart(e, note)}
+                                      onDragOver={handleDragOver}
+                                      onDrop={(e) => handleDrop(e, note)}
                                       className="group relative flex items-start gap-2.5 transition"
                                     >
-                                      <div className="mt-[4px] h-[13px] w-[13px] shrink-0 rounded-[3px] border border-slate-300" />
+                                      <div className="mt-[4px] h-[13px] w-[13px] shrink-0 rounded-[3px] border border-slate-300 cursor-grab active:cursor-grabbing" />
                                       <div className="min-w-0 flex-1">
                                         {isEditing ? (
-                                          <div className="flex w-full items-center gap-2">
-                                            <input
+                                          <div className="flex w-full items-start gap-2">
+                                            <textarea
                                               autoFocus
                                               defaultValue={note.note}
-                                              className="h-[28px] flex-1 rounded-[4px] border border-blue-400 bg-white px-2 text-[13px] text-slate-700 outline-none focus:ring-2 focus:ring-blue-100"
+                                              className="min-h-[28px] w-full flex-1 resize-none overflow-hidden rounded-[4px] border border-blue-400 bg-white px-2 py-1 text-[13px] text-slate-700 outline-none focus:ring-2 focus:ring-blue-100"
+                                              onInput={(e) => {
+                                                e.target.style.height = "auto";
+                                                e.target.style.height = `${e.target.scrollHeight}px`;
+                                              }}
                                               onBlur={async (e) => {
                                                 const val = e.target.value.trim();
                                                 if (!val) {
@@ -723,7 +775,8 @@ export default function Home() {
                                                 setEditingNote(null);
                                               }}
                                               onKeyDown={(e) => {
-                                                if (e.key === "Enter") {
+                                                if (e.key === "Enter" && !e.shiftKey) {
+                                                  e.preventDefault();
                                                   e.target.blur();
                                                 } else if (e.key === "Escape") {
                                                   setEditingNote(null);
@@ -744,7 +797,7 @@ export default function Home() {
                                         ) : (
                                           <div
                                             onClick={() => setEditingNote(note)}
-                                            className="cursor-text text-[13px] leading-[20px] text-slate-500"
+                                            className="cursor-text whitespace-pre-wrap text-[13px] leading-[20px] text-slate-500"
                                           >
                                             {note.note}
                                           </div>
@@ -902,24 +955,42 @@ export default function Home() {
                         </div>
 
                         <div className="space-y-1.5">
-                          {list.map((task) => (
+                          {list.map((task) => {
+                            const status = getTaskStatus(task.status);
+                            const isTaskOverdue = status !== "DONE" && (task.due_date ? new Date(task.due_date).setHours(0,0,0,0) < new Date().setHours(0,0,0,0) : (task.date ? task.date < todayISO() : historyDate < todayISO()));
+                            return (
                             <div
                               key={task.id}
                               className="flex items-start gap-2"
                             >
-                              <div className="mt-[3px] h-3.5 w-3.5 shrink-0 rounded-[3px] border border-slate-300" />
-                              <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
+                              <div className={`mt-[3px] h-3.5 w-3.5 shrink-0 rounded-[3px] border ${status === "DONE" ? "border-emerald-400 bg-emerald-400" : status === "IN_PROGRESS" ? "border-blue-400 bg-blue-400" : "border-slate-300"}`} />
+                              <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
                                 <div className="text-[13px] leading-[20px] text-slate-600">
                                   {task.title || task.name || "Task"}
                                 </div>
-                                {getTaskStatus(task.status) === "TODO" && (task.date ? task.date < todayISO() : historyDate < todayISO()) ? (
-                                  <span className="mt-[2px] shrink-0 rounded-[3px] bg-red-600 px-1.5 py-[3px] text-[9px] font-bold uppercase leading-none tracking-wider text-white">
-                                    OVERDUE
-                                  </span>
-                                ) : null}
+                                <div className="flex shrink-0 items-center gap-1.5">
+                                  {isTaskOverdue ? (
+                                    <span className="rounded-[3px] bg-red-600 px-1.5 py-[3px] text-[9px] font-bold uppercase leading-none tracking-wider text-white">
+                                      OVERDUE
+                                    </span>
+                                  ) : status === "TODO" ? (
+                                    <span className="rounded-[3px] bg-orange-100 px-1.5 py-[3px] text-[9px] font-bold uppercase leading-none tracking-wider text-orange-600">
+                                      TO DO
+                                    </span>
+                                  ) : status === "IN_PROGRESS" ? (
+                                    <span className="rounded-[3px] bg-blue-100 px-1.5 py-[3px] text-[9px] font-bold uppercase leading-none tracking-wider text-blue-600">
+                                      IN PROGRESS
+                                    </span>
+                                  ) : (
+                                    <span className="rounded-[3px] bg-emerald-100 px-1.5 py-[3px] text-[9px] font-bold uppercase leading-none tracking-wider text-emerald-600">
+                                      DONE
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     ))}
@@ -958,8 +1029,7 @@ export default function Home() {
         <NoteModal
           open={openNoteModal}
           title="Save Note"
-          subtitle="Attach a master note to any project."
-          projectOptions={projects.map((project) => project.name)}
+          projectOptions={projects.map((project) => project.name).filter((name) => projectCardTasks(name).length === 0)}
           onClose={() => setOpenNoteModal(false)}
           onSubmit={async (payload) => {
             setCreatingNote(true);

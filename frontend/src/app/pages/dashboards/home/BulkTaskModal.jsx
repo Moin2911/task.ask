@@ -8,6 +8,7 @@ const createEmptyRow = (defaultEmployeeId = "") => ({
   employeeId: defaultEmployeeId,
   priority: "Medium",
   status: "pending",
+  dueDate: new Date().toISOString().split("T")[0],
 });
 
 export function BulkTaskModal({
@@ -87,6 +88,11 @@ const validateTasks = () => {
     );
   };
 
+  const handleBulkChange = (field, value) => {
+    if (!value) return;
+    setRows((prev) => prev.map((row) => ({ ...row, [field]: value })));
+  };
+
   const handleAddRow = () => {
     setRows((prev) => [
       ...prev,
@@ -109,6 +115,7 @@ const validateTasks = () => {
           assigned_to: selectedEmployeeId,
           priority: row.priority.toLowerCase(),
           status: row.status,
+          due_date: row.dueDate,
         };
       })
       .filter((row) => row.title);
@@ -138,39 +145,32 @@ const validateTasks = () => {
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
               Add Task
             </h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Add multiple tasks to a project efficiently.
-            </p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-          >
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-4">
+            <select
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              className="w-48 px-3 py-1.5 rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 text-sm text-gray-900 dark:text-gray-100 outline-none"
+            >
+              {projects.length === 0 && <option value="">No projects</option>}
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* CONTENT */}
         <div className="px-6 py-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-full sm:w-64">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Select Project
-              </label>
-              <select
-                value={selectedProjectId}
-                onChange={(e) => setSelectedProjectId(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 dark:border-gray-700 text-gray-900 dark:text-gray-100"
-              >
-                {projects.length === 0 && <option value="">No projects</option>}
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+
 
           <div className="overflow-x-auto rounded-lg border dark:border-gray-800">
             <table className="w-full text-sm">
@@ -182,6 +182,51 @@ const validateTasks = () => {
                   <th className="px-3 py-3 text-left min-w-[160px]">Employee</th>
                   <th className="px-3 py-3 text-left min-w-[140px]">Priority</th>
                   <th className="px-3 py-3 text-left min-w-[150px]">Status</th>
+                  <th className="px-3 py-3 text-left min-w-[150px]">Deadline</th>
+                </tr>
+                <tr className="border-t dark:border-gray-700 bg-blue-50/50 dark:bg-gray-800/50">
+                  <td className="px-3 py-1.5" />
+                  <td className="px-3 py-1.5 text-[11px] font-medium text-blue-500">Apply to all ↓</td>
+                  <td className="px-3 py-1.5" />
+                  <td className="px-3 py-1.5">
+                    {isAdmin && (
+                      <select
+                        defaultValue=""
+                        onChange={(e) => handleBulkChange("employeeId", e.target.value)}
+                        className="w-full rounded-md border border-blue-200 bg-white px-2 py-1 text-xs text-gray-800 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                      >
+                        <option value="">All Employee</option>
+                        {employeeOptions.map((emp) => (
+                          <option key={emp.id} value={emp.id}>{emp.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </td>
+                  <td className="px-3 py-1.5">
+                    <select
+                      defaultValue=""
+                      onChange={(e) => handleBulkChange("priority", e.target.value)}
+                      className="w-full rounded-md border border-blue-200 bg-white px-2 py-1 text-xs text-gray-800 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                    >
+                      <option value="">All Priority</option>
+                      <option value="High">High</option>
+                      <option value="Medium">Medium</option>
+                      <option value="Low">Low</option>
+                    </select>
+                  </td>
+                  <td className="px-3 py-1.5">
+                    <select
+                      defaultValue=""
+                      onChange={(e) => handleBulkChange("status", e.target.value)}
+                      className="w-full rounded-md border border-blue-200 bg-white px-2 py-1 text-xs text-gray-800 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                    >
+                      <option value="">All Status</option>
+                      <option value="pending">To Do</option>
+                      <option value="in progress">In Progress</option>
+                      <option value="Completed">Done</option>
+                    </select>
+                  </td>
+                  <td className="px-3 py-1.5" />
                 </tr>
               </thead>
               <tbody>
@@ -258,6 +303,16 @@ const validateTasks = () => {
                         <option value="in progress">In Progress</option>
                         <option value="Completed">Done</option>
                       </select>
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="date"
+                        value={row.dueDate}
+                        onChange={(e) =>
+                          handleRowChange(index, "dueDate", e.target.value)
+                        }
+                        className="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-800 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                      />
                     </td>
                   </tr>
                 ))}
