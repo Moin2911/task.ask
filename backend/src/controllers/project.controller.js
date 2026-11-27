@@ -7,6 +7,7 @@ const {
 
 const {
   createProjectService,
+  updateProjectService,
   getProjectsService,
   deleteProjectService,
   upsertProjectMasterService,
@@ -54,6 +55,43 @@ module.exports.createProjectController = async (req, res) => {
     return res
       .status(error.status || 500)
       .json(errorResponse(error.message, "PROJECT_CREATE_FAILED"));
+  }
+};
+
+module.exports.updateProjectController = async (req, res) => {
+  try {
+    const data = await updateProjectService(req.params.id, req.body, req.user);
+
+    logger.info({
+      apiId: "PROJECT_UPDATE",
+      action: "Update project",
+      requestId: req.requestId,
+      sessionId: req.sessionId,
+      userId: req.user?.id,
+      message: "Project updated successfully",
+      env: ENV,
+      service: SERVICE_NAME,
+    });
+
+    return res
+      .status(200)
+      .json(successResponse(data, "Project updated successfully"));
+  } catch (error) {
+    logger.error({
+      apiId: "PROJECT_UPDATE",
+      action: "Update project failed",
+      requestId: req.requestId,
+      sessionId: req.sessionId,
+      userId: req.user?.id,
+      error: error.message,
+      message: "Project update failed",
+      env: ENV,
+      service: SERVICE_NAME,
+    });
+
+    return res
+      .status(error.status || 500)
+      .json(errorResponse(error.message, "PROJECT_UPDATE_FAILED"));
   }
 };
 

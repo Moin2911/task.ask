@@ -13,6 +13,8 @@ const optionalEmployeeColumns = [
 
 let cachedUserColumns = null;
 let userColumnsPromise = null;
+let cachedProjectAssignmentsReady = false;
+let projectAssignmentsPromise = null;
 
 const getUserColumnSet = async () => {
   if (cachedUserColumns) return cachedUserColumns;
@@ -44,6 +46,114 @@ const filterFieldsToExistingColumns = async (fields = {}) => {
   return Object.fromEntries(
     Object.entries(fields).filter(([key]) => columnSet.has(key)),
   );
+};
+
+const ensureProjectAssignmentsTable = async () => {
+  if (cachedProjectAssignmentsReady) return true;
+  if (!projectAssignmentsPromise) {
+    projectAssignmentsPromise = pool
+      .query(`
+        CREATE TABLE IF NOT EXISTS user_project_assignments (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          user_id INT NOT NULL,
+          project_id INT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uniq_user_project (user_id, project_id)
+        )
+      `)
+      .then(() => {
+        cachedProjectAssignmentsReady = true;
+        return true;
+      })
+      .catch((error) => {
+        projectAssignmentsPromise = null;
+        throw error;
+      });
+  }
+
+  return projectAssignmentsPromise;
+};
+
+const parseIdList = (value) => {
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => String(item).split(","))
+      .map((item) => Number(item))
+      .filter((item) => Number.isFinite(item) && item > 0);
+  }
+
+  if (value === undefined || value === null || value === "") return [];
+
+  return String(value)
+    .split(",")
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item) && item > 0);
+};
+
+const hydrateRowsWithProjects = async (rows = []) => {
+  if (!rows.length) return [];
+
+  await ensureProjectAssignmentsTable();
+
+  const userIds = rows
+    .map((row) => Number(row.id))
+    .filter((id) => Number.isFinite(id) && id > 0);
+
+  let assignmentRows = [];
+  if (userIds.length > 0) {
+    const placeholders = userIds.map(() => "?").join(", ");
+    [assignmentRows] = await pool.execute(
+      `
+        SELECT
+          upa.user_id,
+          upa.project_id,
+          p.name AS project_name
+        FROM user_project_assignments upa
+        LEFT JOIN projects p ON p.id = upa.project_id
+        WHERE upa.user_id IN (${placeholders})
+        ORDER BY upa.project_id ASC
+      `,
+      userIds
+    );
+  }
+
+  const grouped = assignmentRows.reduce((acc, row) => {
+    const userId = Number(row.user_id);
+    if (!acc[userId]) {
+      acc[userId] = { project_ids: [], project_names: [] };
+    }
+    acc[userId].project_ids.push(Number(row.project_id));
+    if (row.project_name) {
+      acc[userId].project_names.push(row.project_name);
+    }
+    return acc;
+  }, {});
+
+  return rows.map((row) => {
+    const assignments = grouped[Number(row.id)] || { project_ids: [], project_names: [] };
+    const fallbackProjectId = Number(row.project_id);
+    const fallbackProjectName = row.project_name;
+    const projectIds = assignments.project_ids.length
+      ? assignments.project_ids
+      : Number.isFinite(fallbackProjectId) && fallbackProjectId > 0
+        ? [fallbackProjectId]
+        : [];
+    const projectNames = assignments.project_names.length
+      ? assignments.project_names
+      : fallbackProjectName
+        ? [fallbackProjectName]
+        : [];
+
+    return {
+      ...row,
+      project_ids: projectIds,
+      project_names: projectNames,
+      projects: projectNames.map((name, index) => ({
+        id: projectIds[index] || null,
+        name,
+      })),
+    };
+  });
 };
 
 // module.exports.createUser = async (user) => {
@@ -114,6 +224,60 @@ module.exports.createUser = async (user) => {
   };
 };
 
+module.exports.ensureProjectAssignmentsTable = ensureProjectAssignmentsTable;
+
+module.exports.parseIdList = parseIdList;
+
+module.exports.getProjectAssignmentsByUserId = async (userId) => {
+  await ensureProjectAssignmentsTable();
+  const numericUserId = Number(userId);
+  if (!Number.isFinite(numericUserId) || numericUserId <= 0) return [];
+
+  const [rows] = await pool.execute(
+    `
+      SELECT
+        upa.project_id,
+        p.name AS project_name
+      FROM user_project_assignments upa
+      LEFT JOIN projects p ON p.id = upa.project_id
+      WHERE upa.user_id = ?
+      ORDER BY upa.project_id ASC
+    `,
+    [numericUserId]
+  );
+
+  return rows;
+};
+
+module.exports.setUserProjectAssignments = async (userId, projectIds = []) => {
+  await ensureProjectAssignmentsTable();
+  const numericUserId = Number(userId);
+  if (!Number.isFinite(numericUserId) || numericUserId <= 0) return [];
+
+  const uniqueProjectIds = Array.from(
+    new Set(parseIdList(projectIds))
+  );
+
+  await pool.execute(
+    "DELETE FROM user_project_assignments WHERE user_id = ?",
+    [numericUserId]
+  );
+
+  if (uniqueProjectIds.length === 0) {
+    return [];
+  }
+
+  const placeholders = uniqueProjectIds.map(() => "(?, ?)").join(", ");
+  const values = uniqueProjectIds.flatMap((projectId) => [numericUserId, projectId]);
+
+  await pool.execute(
+    `INSERT INTO user_project_assignments (user_id, project_id) VALUES ${placeholders}`,
+    values
+  );
+
+  return uniqueProjectIds;
+};
+
 
 module.exports.findUserByEmail = async (email) => {
   const [rows] = await pool.execute(
@@ -141,7 +305,7 @@ module.exports.getAllEmployees = async () => {
     `SELECT ${columns.join(", ")} FROM users`,
   );
 
-  return rows;
+  return hydrateRowsWithProjects(rows);
 };
 
 
@@ -153,7 +317,10 @@ module.exports.getEmployeeById = async (id) => {
     [id],
   );
 
-  return rows[0] || null;
+  const [row] = rows;
+  if (!row) return null;
+  const [hydrated] = await hydrateRowsWithProjects([row]);
+  return hydrated || null;
 };
 
 module.exports.updateEmployeeById = async (id, fields) => {

@@ -359,7 +359,7 @@ router.get(
  *         description: Task ID
  *         schema:
  *           type: integer
- *           example: 
+ *           example: 12
  *     requestBody:
  *       required: true
  *       content:
@@ -412,6 +412,47 @@ router.get(
 
 router.patch("/:id/status", verifyToken,updateTaskStatusController);
 
+/**
+ * @swagger
+ * /api/tasks/history:
+ *   get:
+ *     summary: Get task status history
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: date
+ *         required: false
+ *         schema:
+ *           type: string
+ *           example: 2026-06-19
+ *       - in: query
+ *         name: startDate
+ *         required: false
+ *         schema:
+ *           type: string
+ *           example: 2026-06-01
+ *       - in: query
+ *         name: endDate
+ *         required: false
+ *         schema:
+ *           type: string
+ *           example: 2026-06-19
+ *       - in: query
+ *         name: userId
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           example: 5
+ *     responses:
+ *       200:
+ *         description: Task history fetched successfully
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
 router.get("/history", verifyToken, getTaskHistoryController);
 
 

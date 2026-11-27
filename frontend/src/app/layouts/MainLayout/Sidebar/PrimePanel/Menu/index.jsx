@@ -24,7 +24,7 @@ import {
 
 // ----------------------------------------------------------------------
 
-export function Menu({ nav, pathname }) {
+export function Menu({ nav, pathname, canManageProjects, onEditProject, onDeleteProject }) {
   const initialActivePath = useMemo(() => {
     return nav.find((item) => isRouteActive(item.path, pathname))?.path;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -70,7 +70,15 @@ export function Menu({ nav, pathname }) {
               case NAV_TYPE_GROUP:
                 return <GroupItem key={itemKey} data={item} />;
               case NAV_TYPE_ITEM:
-                return <MenuItem key={itemKey} data={item} />;
+                return (
+                  <MenuItem
+                    key={itemKey}
+                    data={item}
+                    canManageProjects={canManageProjects}
+                    onEditProject={onEditProject}
+                    onDeleteProject={onDeleteProject}
+                  />
+                );
               case NAV_TYPE_DIVIDER:
                 return <Divider key={itemKey} />;
               default:
@@ -85,4 +93,7 @@ export function Menu({ nav, pathname }) {
 
 Menu.propTypes = {
   nav: PropTypes.array,
+  canManageProjects: PropTypes.bool,
+  onEditProject: PropTypes.func,
+  onDeleteProject: PropTypes.func,
 };

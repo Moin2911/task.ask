@@ -9,6 +9,7 @@ import {
   MoonIcon,
   SunIcon,
 } from "@heroicons/react/20/solid";
+import { toast } from "sonner";
 import { useNavigate } from "react-router";
 
 // Local Imports
@@ -17,9 +18,13 @@ import { useAuthContext } from "app/contexts/auth/context";
 import { Button } from "components/ui";
 import { Menu } from "./Menu";
 import { NAV_TYPE_ITEM } from "constants/app.constant";
+import { ProjectModal } from "app/pages/dashboards/home/ProjectModal";
 import {
   PROJECTS_UPDATED_EVENT,
+  deleteProject,
   getProjects,
+  notifyProjectsUpdated,
+  updateProject,
 } from "app/services/projects";
 import { getStoredUserRole } from "utils/authUser";
 
@@ -35,6 +40,8 @@ export function PrimePanel({
   const navigate = useNavigate();
   const [dynamicProjects, setDynamicProjects] = useState([]);
   const [role, setRole] = useState("");
+  const [editingProject, setEditingProject] = useState(null);
+  const [savingProject, setSavingProject] = useState(false);
 
   useEffect(() => {
     const syncRole = () => {
@@ -53,7 +60,7 @@ export function PrimePanel({
       try {
         const projects = await getProjects();
         if (!mounted) return;
-        setDynamicProjects(projects.map((project) => project.name).filter(Boolean));
+        setDynamicProjects(projects.filter((project) => project?.name));
       } catch {
         if (!mounted) return;
         setDynamicProjects([]);
@@ -83,13 +90,14 @@ export function PrimePanel({
       if (isAdmin) return true;
       return item.id !== "dashboards.home";
     });
-    const projectItems = dynamicProjects.map((projectName, index) => ({
-      id: `dashboards.dynamic-project-${index}`,
+    const projectItems = dynamicProjects.map((project, index) => ({
+      id: `dashboards.dynamic-project-${project.id}`,
       type: NAV_TYPE_ITEM,
-      title: projectName,
+      title: project.name,
       showBullet: true,
       hasTopGap: index === 0,
-      path: `/dashboards/allproject?project=${encodeURIComponent(projectName)}`,
+      project,
+      path: `/dashboards/allproject?project=${encodeURIComponent(project.name)}`,
     }));
 
     return {
@@ -97,6 +105,37 @@ export function PrimePanel({
       childs: [...baseItems, ...projectItems],
     };
   }, [currentSegment, dynamicProjects, role]);
+
+  const isAdmin = role.trim().toLowerCase() === "admin";
+
+  const handleProjectSave = async (payload) => {
+    if (!editingProject) return;
+    setSavingProject(true);
+    try {
+      const response = await updateProject(editingProject.id, payload);
+      toast.success("Project updated");
+      setEditingProject(null);
+      notifyProjectsUpdated({
+        project: response?.data,
+        previousName: editingProject.name,
+      });
+    } catch (error) {
+      toast.error(error?.message || "Failed to update project");
+    } finally {
+      setSavingProject(false);
+    }
+  };
+
+  const handleProjectDelete = async (project) => {
+    if (!window.confirm(`Delete project "${project.name}"?`)) return;
+    try {
+      await deleteProject(project.id);
+      toast.success("Project deleted");
+      notifyProjectsUpdated();
+    } catch (error) {
+      toast.error(error?.message || "Failed to delete project");
+    }
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -141,6 +180,9 @@ export function PrimePanel({
             <Menu
               nav={resolvedSegment?.childs}
               pathname={pathname}
+              canManageProjects={isAdmin}
+              onEditProject={setEditingProject}
+              onDeleteProject={handleProjectDelete}
             />
           </div>
         )}
@@ -191,6 +233,13 @@ export function PrimePanel({
           </Button>
         </div>
       </div>
+      <ProjectModal
+        open={Boolean(editingProject)}
+        project={editingProject}
+        loading={savingProject}
+        onClose={() => setEditingProject(null)}
+        onSubmit={handleProjectSave}
+      />
     </div>
   );
 }

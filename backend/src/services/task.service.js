@@ -134,7 +134,7 @@ async function fetchKanbanTasksByCategory(user, category, page, limit, filters =
 
 async function fetchTaskHistory(user, filters = {}) {
   const queryFilters = { ...filters };
-  
+
   if (user.role !== "admin") {
     queryFilters.userId = user.id;
   }

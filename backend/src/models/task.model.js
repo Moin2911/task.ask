@@ -270,10 +270,15 @@ module.exports.getTaskHistory = async (filters = {}) => {
   const params = [];
 
   const dateCol = "IFNULL(t.due_date, t.created_at)";
+  const normalizedDate = filters.date || null;
+  const normalizedStartDate = filters.startDate || normalizedDate || null;
+  const normalizedEndDate = filters.endDate || normalizedDate || null;
 
-  if (filters.date) {
-    clauses.push(`DATE(${dateCol}) = ?`);
-    params.push(filters.date);
+  if (normalizedStartDate || normalizedEndDate) {
+    const startDate = normalizedStartDate || normalizedEndDate;
+    const endDate = normalizedEndDate || normalizedStartDate;
+    clauses.push(`DATE(${dateCol}) BETWEEN ? AND ?`);
+    params.push(startDate, endDate);
   } else {
     // default to today
     clauses.push(`DATE(${dateCol}) = DATE(NOW())`);

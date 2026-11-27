@@ -20,6 +20,8 @@ export function BulkTaskModal({
 }) {
   const userRole = (getStoredUserRole() || "").trim().toLowerCase();
   const isAdmin = userRole === "admin";
+  const isManager = userRole === "manager";
+  const canAssignEmployees = isAdmin || isManager;
   const currentUserName = getStoredUserName();
   const currentUserId = getStoredUserId();
   const [loading, setLoading] = useState(false);
@@ -37,7 +39,7 @@ const validateTasks = () => {
     return false;
   }
 
-  if (isAdmin) {
+  if (canAssignEmployees) {
     const invalidEmployee = validRows.some((r) => !r.employeeId);
     if (invalidEmployee) {
       toast.error("Please assign employee to all tasks");
@@ -52,15 +54,29 @@ const validateTasks = () => {
     projects[0]?.id || "",
   );
   const [rows, setRows] = useState(() =>
-    Array.from({ length: 5 }, () => createEmptyRow(isAdmin ? "" : String(currentUserId || ""))),
+    Array.from({ length: 5 }, () =>
+      createEmptyRow(canAssignEmployees ? "" : String(currentUserId || "")),
+    ),
   );
 
   const employeeOptions = useMemo(
     () =>
       employees
-        .filter((e) => e?.id && e?.name)
+        .filter((e) => {
+          if (!e?.id || !e?.name) return false;
+
+          if (!selectedProjectId) return true;
+
+          const projectIds = Array.isArray(e.project_ids)
+            ? e.project_ids.map(String)
+            : e.project_id
+              ? [String(e.project_id)]
+              : [];
+
+          return projectIds.includes(String(selectedProjectId));
+        })
         .map((e) => ({ id: String(e.id), name: e.name })),
-    [employees],
+    [employees, selectedProjectId],
   );
 
   const fixedEmployeeLabel = useMemo(() => {
@@ -74,11 +90,22 @@ const validateTasks = () => {
       setSelectedProjectId(projects[0]?.id || "");
       setRows(
         Array.from({ length: 5 }, () =>
-          createEmptyRow(isAdmin ? "" : String(currentUserId || "")),
+          createEmptyRow(canAssignEmployees ? "" : String(currentUserId || "")),
         ),
       );
     }
-  }, [open, projects, isAdmin, currentUserId]);
+  }, [open, projects, canAssignEmployees, currentUserId]);
+
+  useEffect(() => {
+    if (!canAssignEmployees) return;
+    setRows((prev) =>
+      prev.map((row) => {
+        if (!row.employeeId) return row;
+        const isValid = employeeOptions.some((option) => option.id === String(row.employeeId));
+        return isValid ? row : { ...row, employeeId: "" };
+      }),
+    );
+  }, [canAssignEmployees, employeeOptions]);
 
   if (!open) return null;
 
@@ -96,15 +123,15 @@ const validateTasks = () => {
   const handleAddRow = () => {
     setRows((prev) => [
       ...prev,
-      createEmptyRow(isAdmin ? "" : String(currentUserId || "")),
+      createEmptyRow(canAssignEmployees ? "" : String(currentUserId || "")),
     ]);
   };
   const handleCreate = async () => {
     if (!validateTasks()) return;
 
-    const tasks = rows
+      const tasks = rows
       .map((row) => {
-        const selectedEmployeeId = isAdmin
+        const selectedEmployeeId = canAssignEmployees
           ? Number(row.employeeId) || null
           : Number(currentUserId) || null;
 
@@ -189,7 +216,7 @@ const validateTasks = () => {
                   <td className="px-3 py-1.5 text-[11px] font-medium text-blue-500">Apply to all ↓</td>
                   <td className="px-3 py-1.5" />
                   <td className="px-3 py-1.5">
-                    {isAdmin && (
+                    {canAssignEmployees && (
                       <select
                         defaultValue=""
                         onChange={(e) => handleBulkChange("employeeId", e.target.value)}
@@ -257,7 +284,7 @@ const validateTasks = () => {
                       />
                     </td>
                     <td className="px-3 py-2">
-                      {isAdmin ? (
+                      {canAssignEmployees ? (
                         <select
                           value={row.employeeId}
                           onChange={(e) =>

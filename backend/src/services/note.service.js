@@ -48,8 +48,9 @@ module.exports.updateNote = async (id, payload, user) => {
   const hasNote =
     Object.prototype.hasOwnProperty.call(payload, "note") ||
     Object.prototype.hasOwnProperty.call(payload, "notes");
+  const hasIsCompleted = Object.prototype.hasOwnProperty.call(payload, "is_completed");
 
-  if (!hasProject && !hasNote) throw new Error("NOTE_UPDATE_REQUIRED");
+  if (!hasProject && !hasNote && !hasIsCompleted) throw new Error("NOTE_UPDATE_REQUIRED");
 
   const projectName = hasProject
     ? normalizeText(resolveProjectName(payload))
@@ -64,6 +65,7 @@ module.exports.updateNote = async (id, payload, user) => {
   const affectedRows = await updateNoteById(id, {
     projectName,
     note,
+    is_completed: hasIsCompleted ? payload.is_completed : undefined,
     userId: user?.id,
   });
 

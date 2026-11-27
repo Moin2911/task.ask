@@ -1,24 +1,90 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import {
+  CalendarDays,
+  ChevronDown,
+  Check,
   Edit2,
+  FolderPlus,
+  History,
+  ListTodo,
   Plus,
   Search,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import { Page } from "components/shared/Page";
+import { SidebarToggleBtn } from "components/shared/SidebarToggleBtn";
+import { getStoredUserName } from "utils/authUser";
 import {
   createEmployee,
   deleteEmployee,
   getEmployees,
   updateEmployee,
 } from "app/services/employees";
-import { getProjects } from "app/services/projects";
+import { getProjects, PROJECTS_UPDATED_EVENT } from "app/services/projects";
 import { getTasksPage } from "app/services/tasks";
 
 
 const normalize = (value) => String(value || "").trim().toLowerCase();
+const initialsFor = (value) =>
+  String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "AD";
+
+const normalizeProjectOptions = (projects = []) =>
+  projects
+    .map((project) =>
+      typeof project === "string"
+        ? { id: String(project), name: project }
+        : {
+            id: String(project?.id ?? ""),
+            name: project?.name || String(project?.id ?? ""),
+          },
+    )
+    .filter((project) => project.id && project.name);
+
+const normalizeProjectIds = (value) => {
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => String(item).split(","))
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  if (!value) return [];
+
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+const getEmployeeProjectIds = (employee) => {
+  const projectIds = normalizeProjectIds(employee?.project_ids);
+  if (projectIds.length > 0) return projectIds;
+  if (employee?.project_id) return [String(employee.project_id)];
+  return [];
+};
+
+const getProjectButtonLabel = (employee, draftIds = []) => {
+  const count = draftIds.length;
+  if (count === 0) return "Select projects";
+
+  const names = Array.isArray(employee?.project_names) ? employee.project_names : [];
+  if (names.length === count && names.length > 0) {
+    return names.slice(0, 2).join(", ") + (names.length > 2 ? ` +${names.length - 2}` : "");
+  }
+
+  return `${count} project${count > 1 ? "s" : ""} selected`;
+};
 
 const defaultForm = {
   name: "",
@@ -32,7 +98,7 @@ const defaultForm = {
   aadhar_file: null,
   pan_file: null,
   status: "active",
-  project_id: "",
+  project_ids: [],
 };
 
 function Modal({ open, title, onClose, children, widthClass = "max-w-4xl" }) {
@@ -86,8 +152,17 @@ function Switch({ checked, onChange }) {
   );
 }
 
-function EmployeeModal({ open, title, onClose, onSubmit, loading, initialValue }) {
+function EmployeeModal({
+  open,
+  title,
+  onClose,
+  onSubmit,
+  loading,
+  initialValue,
+  projects = [],
+}) {
   const [form, setForm] = useState(defaultForm);
+  const normalizedProjects = useMemo(() => normalizeProjectOptions(projects), [projects]);
 
   useEffect(() => {
     if (open) {
@@ -97,14 +172,27 @@ function EmployeeModal({ open, title, onClose, onSubmit, loading, initialValue }
         password: "",
         aadhar_file: null,
         pan_file: null,
+        project_ids: getEmployeeProjectIds(initialValue),
       });
     }
   }, [open, initialValue]);
 
+  const toggleProject = (projectId) => {
+    setForm((prev) => {
+      const current = Array.isArray(prev.project_ids) ? prev.project_ids : [];
+      return {
+        ...prev,
+        project_ids: current.includes(projectId)
+          ? current.filter((id) => id !== projectId)
+          : [...current, projectId],
+      };
+    });
+  };
+
   return (
     <Modal open={open} title={title} onClose={onClose} widthClass="max-w-4xl">
       <form
-        className="px-6 py-5"
+        className="max-h-[82vh] overflow-y-auto px-6 py-5"
         onSubmit={async (event) => {
           event.preventDefault();
           await onSubmit(form);
@@ -190,6 +278,43 @@ function EmployeeModal({ open, title, onClose, onSubmit, loading, initialValue }
           </label>
         </div>
 
+        <div className="mt-5">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <span className="text-sm font-medium text-slate-700">Projects</span>
+            <span className="text-xs text-slate-500">
+              {Array.isArray(form.project_ids) ? form.project_ids.length : 0} selected
+            </span>
+          </div>
+          <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
+            {normalizedProjects.length === 0 ? (
+              <div className="text-sm text-slate-400">No projects available</div>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {normalizedProjects.map((project) => {
+                  const checked = Array.isArray(form.project_ids)
+                    ? form.project_ids.includes(project.id)
+                    : false;
+
+                  return (
+                    <label
+                      key={project.id}
+                      className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleProject(project.id)}
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="truncate">{project.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="mt-5 flex items-center justify-between">
           <div className="text-sm text-slate-500">
             Fields mirror the backend register/update payload.
@@ -217,6 +342,8 @@ function EmployeeModal({ open, title, onClose, onSubmit, loading, initialValue }
 }
 
 export default function Listing() {
+  const navigate = useNavigate();
+  const currentUserName = getStoredUserName() || "ADMIN";
   const [employees, setEmployees] = useState([]);
   const [projects, setProjects] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -226,6 +353,11 @@ export default function Listing() {
   const [openEdit, setOpenEdit] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [projectDrafts, setProjectDrafts] = useState({});
+  const [openProjectMenuId, setOpenProjectMenuId] = useState(null);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const projectMenuRef = useRef(null);
+  const profileMenuRef = useRef(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -249,6 +381,49 @@ export default function Listing() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    const handleProjectsUpdated = () => loadData();
+    window.addEventListener(PROJECTS_UPDATED_EVENT, handleProjectsUpdated);
+    return () =>
+      window.removeEventListener(PROJECTS_UPDATED_EVENT, handleProjectsUpdated);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const nextDrafts = employees.reduce((acc, employee) => {
+      acc[employee.id] = getEmployeeProjectIds(employee);
+      return acc;
+    }, {});
+    setProjectDrafts(nextDrafts);
+  }, [employees]);
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      if (
+        projectMenuRef.current?.contains(event.target) ||
+        profileMenuRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+      setOpenProjectMenuId(null);
+      setProfileMenuOpen(false);
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === "Escape") {
+        setOpenProjectMenuId(null);
+        setProfileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, []);
+
   const taskCounts = useMemo(() => {
     return tasks.reduce((acc, task) => {
       const name = task.assigned_user || task.lead || "";
@@ -256,17 +431,6 @@ export default function Listing() {
       const status = normalize(task.status);
       if (["completed", "done", "complete"].includes(status)) return acc;
       acc[name] = (acc[name] || 0) + 1;
-      return acc;
-    }, {});
-  }, [tasks]);
-
-  const projectsByEmployee = useMemo(() => {
-    return tasks.reduce((acc, task) => {
-      const name = task.assigned_user || task.lead || task.employee || "";
-      const projectName = task.project_name || task.project || task.projectName || "General";
-      if (!name) return acc;
-      if (!acc[name]) acc[name] = new Set();
-      acc[name].add(projectName);
       return acc;
     }, {});
   }, [tasks]);
@@ -292,10 +456,36 @@ export default function Listing() {
     if (form.bank_account_number) data.append("bank_account_number", form.bank_account_number);
     if (form.bank_ifsc) data.append("bank_ifsc", form.bank_ifsc);
     if (form.status) data.append("status", form.status);
-    if (form.project_id) data.append("project_id", form.project_id);
+    const projectIds = normalizeProjectIds(form.project_ids);
+    if (projectIds.length === 0) {
+      data.append("project_ids", "");
+    } else {
+      projectIds.forEach((projectId) => data.append("project_ids", projectId));
+      if (projectIds[0]) data.append("project_id", projectIds[0]);
+    }
     if (form.aadhar_file) data.append("aadhar_file", form.aadhar_file);
     if (form.pan_file) data.append("pan_file", form.pan_file);
     return data;
+  };
+
+  const saveProjectAssignments = async (employee) => {
+    const projectIds = projectDrafts[employee.id] || [];
+    const payload = new FormData();
+    if (projectIds.length === 0) {
+      payload.append("project_ids", "");
+    } else {
+      projectIds.forEach((projectId) => payload.append("project_ids", projectId));
+      if (projectIds[0]) payload.append("project_id", projectIds[0]);
+    }
+
+    try {
+      await updateEmployee(employee.id, payload);
+      toast.success("Projects updated successfully");
+      setOpenProjectMenuId(null);
+      await loadData();
+    } catch (error) {
+      toast.error(error?.message || "Failed to update projects");
+    }
   };
 
   const submitEmployee = async (form) => {
@@ -332,29 +522,119 @@ export default function Listing() {
 
   return (
     <Page title="Employee Listing">
-      <div className="min-h-screen bg-[#f7f9fc]">
-        <div className="mx-auto flex min-h-screen w-full max-w-[1600px]">
+      <>
+        <header className="sticky top-0 z-40 flex h-16 items-center gap-3 bg-[#f7f9fc] px-4 sm:px-6">
+          <SidebarToggleBtn />
+          <button
+            type="button"
+            onClick={() => navigate("/dashboards/home")}
+            aria-label="Go to dashboard home"
+            className="shrink-0"
+          >
+            <img
+              src="/images/askinnovationlogo.webp"
+              alt="Ask Innovations"
+              className="h-10 w-28 object-contain"
+            />
+          </button>
+
+          <div className="relative ml-1 hidden w-36 shrink sm:block sm:w-52 lg:w-64">
+            <Search
+              size={15}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search..."
+              aria-label="Search employees"
+              className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+
+          <div className="flex-1" />
+
+          <button
+            type="button"
+            onClick={() => navigate("/dashboards/home?action=add-note")}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 sm:gap-2 sm:px-4"
+          >
+            <Plus size={16} />
+            <span>Add Note</span>
+          </button>
+
+          <div className="relative shrink-0" ref={profileMenuRef}>
+            <button
+              type="button"
+              onClick={() => setProfileMenuOpen((open) => !open)}
+              aria-label="Open profile menu"
+              aria-expanded={profileMenuOpen}
+              className="flex h-10 items-center gap-1 rounded-full p-0.5 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">
+                {initialsFor(currentUserName)}
+              </span>
+              <ChevronDown size={15} className="mr-1 text-slate-500" />
+            </button>
+
+            {profileMenuOpen ? (
+              <div className="absolute right-0 top-full z-50 mt-2 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+                <button
+                  type="button"
+                  onClick={() => navigate("/dashboards/home?view=history")}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  <History size={16} className="text-slate-500" /> History
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate("/dashboards/home?view=daily-update")}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  <CalendarDays size={16} className="text-slate-500" /> Daily Update
+                </button>
+                <div className="my-1 border-t border-slate-100" />
+                <button
+                  type="button"
+                  onClick={() => navigate("/dashboards/home?action=add-project")}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  <FolderPlus size={16} className="text-slate-500" /> Add Project
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate("/dashboards/home?action=add-task")}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  <ListTodo size={16} className="text-slate-500" /> Add Task
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileMenuOpen(false);
+                    navigate("/dashboards/listing");
+                  }}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  <Users size={16} className="text-slate-500" /> Employee
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </header>
+
+        <div className="min-h-[calc(100vh-4rem)] bg-[#f7f9fc]">
+        <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[1600px]">
           <main className="flex min-w-0 flex-1 flex-col">
 
 
             <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 lg:px-8">
-              <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                <div className="relative max-w-[440px] flex-1">
-                  <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search..."
-                    className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none"
-                  />
-                </div>
-
+              <div className="mb-6 flex justify-end">
                 <div className="flex flex-wrap gap-2">
                   <div className="hidden items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 shadow-sm md:flex">
                     {employees.length} Employees / {projects.length} Projects
                   </div>
                   <button
-
                     onClick={() => setOpenAdd(true)}
                     className="inline-flex h-11 items-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
                   >
@@ -363,7 +643,7 @@ export default function Listing() {
                 </div>
               </div>
 
-              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-slate-600">
                     <tr>
@@ -403,16 +683,103 @@ export default function Listing() {
                         </td>
                         <td className="px-6 py-4 text-slate-600">{employee.email}</td>
                         <td className="px-6 py-4 text-slate-600">{employee.phone || "-"}</td>
-                        <td className="px-6 py-4">
-                          <select className="h-9 w-full min-w-[130px] rounded-lg border border-slate-200 bg-slate-50 px-2 text-[13px] text-slate-700 outline-none">
-                            {projectsByEmployee[employee.name] && Array.from(projectsByEmployee[employee.name]).length > 0 ? (
-                              Array.from(projectsByEmployee[employee.name]).map((proj) => (
-                                <option key={proj} value={proj}>{proj}</option>
-                              ))
-                            ) : (
-                              <option value="" disabled>No Projects</option>
+                        <td className="px-6 py-4 align-top">
+                          <div
+                            className="relative mx-auto w-full max-w-[210px]"
+                            ref={openProjectMenuId === employee.id ? projectMenuRef : null}
+                          >
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setOpenProjectMenuId((current) =>
+                                  current === employee.id ? null : employee.id,
+                                )
+                              }
+                              className="flex h-11 w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 text-left text-sm text-slate-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50"
+                            >
+                              <span className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                {getProjectButtonLabel(
+                                  employee,
+                                  projectDrafts[employee.id] || getEmployeeProjectIds(employee),
+                                )}
+                              </span>
+                              <ChevronDown size={16} className="shrink-0 text-slate-400" />
+                            </button>
+
+                            {openProjectMenuId === employee.id && (
+                              <div className="absolute left-0 top-[calc(100%+8px)] z-30 w-full min-w-[280px] rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl">
+                                <div className="mb-2 flex items-center justify-between">
+                                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                                    Assign Projects
+                                  </div>
+                                  <div className="text-[11px] text-slate-500">
+                                    {(projectDrafts[employee.id] || getEmployeeProjectIds(employee)).length} selected
+                                  </div>
+                                </div>
+                                <div className="max-h-52 overflow-y-auto pr-1">
+                                  <div className="grid gap-2">
+                                    {projects.map((project) => {
+                                      const current = projectDrafts[employee.id] || getEmployeeProjectIds(employee);
+                                      const checked = current.includes(String(project.id));
+
+                                      return (
+                                        <label
+                                          key={project.id}
+                                          className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition ${
+                                            checked
+                                              ? "border-blue-200 bg-blue-50 text-blue-700"
+                                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                          }`}
+                                        >
+                                          <span
+                                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] border ${
+                                              checked
+                                                ? "border-blue-600 bg-blue-600 text-white"
+                                                : "border-slate-300 bg-white"
+                                            }`}
+                                          >
+                                            {checked ? <Check size={13} strokeWidth={3} /> : null}
+                                          </span>
+                                          <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={() => {
+                                              setProjectDrafts((prev) => {
+                                                const currentIds =
+                                                  prev[employee.id] || getEmployeeProjectIds(employee);
+                                                const next = currentIds.includes(String(project.id))
+                                                  ? currentIds.filter((id) => id !== String(project.id))
+                                                  : [...currentIds, String(project.id)];
+                                                return { ...prev, [employee.id]: next };
+                                              });
+                                            }}
+                                            className="sr-only"
+                                          />
+                                          <span className="truncate">{project.name}</span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                                <div className="mt-3 flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => setOpenProjectMenuId(null)}
+                                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                                  >
+                                    Close
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => saveProjectAssignments(employee)}
+                                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
+                                  >
+                                    Save
+                                  </button>
+                                </div>
+                              </div>
                             )}
-                          </select>
+                          </div>
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
@@ -479,6 +846,7 @@ export default function Listing() {
           onClose={() => setOpenAdd(false)}
           onSubmit={submitEmployee}
           initialValue={defaultForm}
+          projects={projects}
         />
 
         <EmployeeModal
@@ -501,12 +869,14 @@ export default function Listing() {
                   bank_account_number: editingEmployee.bank_account_number || "",
                   bank_ifsc: editingEmployee.bank_ifsc || "",
                   status: editingEmployee.status || "active",
-                  project_id: editingEmployee.project_id || "",
+                  project_ids: getEmployeeProjectIds(editingEmployee),
                 }
               : defaultForm
           }
+          projects={projects}
         />
       </div>
+      </>
     </Page>
   );
 }

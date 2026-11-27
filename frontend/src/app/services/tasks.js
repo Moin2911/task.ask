@@ -101,9 +101,11 @@ export const getMyTasksPage = async ({ page = 1, limit = 10, search = "" } = {})
   return response?.data;
 };
 
-export const getTaskHistory = async ({ date, employeeId } = {}) => {
+export const getTaskHistory = async ({ date, startDate, endDate, employeeId } = {}) => {
   const params = new URLSearchParams();
   if (date) params.set("date", date);
+  if (startDate) params.set("startDate", startDate);
+  if (endDate) params.set("endDate", endDate);
   if (employeeId) params.set("userId", employeeId);
 
   const response = await axios.get(`/tasks/history?${params.toString()}`, {

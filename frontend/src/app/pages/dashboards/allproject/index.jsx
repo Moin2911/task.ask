@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 import {
   CalendarDays,
@@ -27,7 +27,7 @@ import {
   updateTaskStatus,
 } from "app/services/tasks";
 import { getEmployees } from "app/services/employees";
-import { getProjects } from "app/services/projects";
+import { getProjects, PROJECTS_UPDATED_EVENT } from "app/services/projects";
 import { getProjectMaster, saveProjectMaster } from "app/services/projectMaster";
 
 const normalize = (value) => String(value || "").trim().toLowerCase();
@@ -188,7 +188,7 @@ function ProjectMasterDrawer({ open, onClose, projects, selectedProjectId, onCha
 
 function TaskDetailModal({ open, task, comments, comment, onCommentChange, onClose, onAddComment, onDelete, isAdmin }) {
   if (!open || !task) return null;
-  
+
   const leadName = getLeadName(task);
   const initials = leadName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() || "?";
   const statusDisplay = task.status === "TODO" ? "TO DO" : task.status === "IN_PROGRESS" ? "IN PROGRESS" : "DONE";
@@ -246,7 +246,7 @@ function TaskDetailModal({ open, task, comments, comment, onCommentChange, onClo
         <div>
           <div className="rounded-2xl border border-slate-200 p-5">
             <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Assignee</div>
-            
+
             <div className="flex items-center gap-3 mb-6">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#6366f1] text-sm font-semibold text-white">
                 {initials}
@@ -279,7 +279,7 @@ function TaskDetailModal({ open, task, comments, comment, onCommentChange, onClo
                 </span>
               </div>
             </div>
-            
+
             {isAdmin && (
               <div className="mt-6 border-t border-slate-100 pt-4">
                 <button onClick={() => onDelete(task.id)} className="w-full inline-flex justify-center items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-100">
@@ -296,8 +296,11 @@ function TaskDetailModal({ open, task, comments, comment, onCommentChange, onClo
 
 export default function AllProject() {
   const location = useLocation();
+  const navigate = useNavigate();
   const role = normalize(getStoredUserRole());
   const isAdmin = role === "admin";
+  const isManager = role === "manager";
+  const canManageProjects = isAdmin || isManager;
 
   const [projects, setProjects] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -321,18 +324,18 @@ export default function AllProject() {
       const [projectsRes, employeesRes, tasksRes] = await Promise.all([
         getProjects(),
         getEmployees(),
-        isAdmin ? getTasksPage({ page, limit: 500 }) : getMyTasksPage({ page, limit: 500 }),
+        canManageProjects ? getTasksPage({ page, limit: 500 }) : getMyTasksPage({ page, limit: 500 }),
       ]);
 
       const normalizedTasks = Array.isArray(tasksRes?.data)
         ? tasksRes.data.map((task) => ({
-            ...task,
-            title: task.title,
-            project: getProjectName(task),
-            lead: getLeadName(task),
-            status: mapStatus(task.status),
-            due: task.due_date || task.created_at || "",
-          }))
+          ...task,
+          title: task.title,
+          project: getProjectName(task),
+          lead: getLeadName(task),
+          status: mapStatus(task.status),
+          due: task.due_date || task.created_at || "",
+        }))
         : [];
 
       setProjects(Array.isArray(projectsRes) ? projectsRes : []);
@@ -348,6 +351,25 @@ export default function AllProject() {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
+
+  useEffect(() => {
+    const handleProjectsUpdated = (event) => {
+      const change = event.detail;
+      if (
+        change?.project?.name &&
+        normalize(selectedProject) === normalize(change.previousName)
+      ) {
+        const params = new URLSearchParams(location.search);
+        params.set("project", change.project.name);
+        navigate(`${location.pathname}?${params.toString()}`, { replace: true });
+      }
+      loadData();
+    };
+    window.addEventListener(PROJECTS_UPDATED_EVENT, handleProjectsUpdated);
+    return () =>
+      window.removeEventListener(PROJECTS_UPDATED_EVENT, handleProjectsUpdated);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, location.search, navigate, page, selectedProject]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -421,7 +443,7 @@ export default function AllProject() {
                       </option>
                     ))}
                   </select>
-                  {isAdmin ? (
+                  {canManageProjects ? (
                     <select
                       value={selectedEmployee}
                       onChange={(e) => setSelectedEmployee(e.target.value)}
@@ -461,7 +483,14 @@ export default function AllProject() {
                     <Plus size={18} /> Add Task
                   </button>
                   <button
-                    onClick={() => setOpenMaster(true)}
+                    onClick={() => {
+                      // Agar sidebar me koi project selected hai to use set karo, warna empty
+                      const projectToSet = selectedProject !== "ALL" ?
+                        projects.find(p => normalize(p.name) === normalize(selectedProject))?.id || "" :
+                        "";
+                      setSelectedMasterProject(projectToSet);
+                      setOpenMaster(true);
+                    }}
                     className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
                   >
                     <Grid2X2 size={16} /> Master
@@ -469,17 +498,15 @@ export default function AllProject() {
                   <div className="flex h-11 rounded-xl bg-slate-100 p-1">
                     <button
                       onClick={() => setView("KANBAN")}
-                      className={`inline-flex items-center gap-2 rounded-lg px-4 text-sm font-semibold transition ${
-                        view === "KANBAN" ? "bg-white text-blue-600 shadow-sm" : "text-slate-600"
-                      }`}
+                      className={`inline-flex items-center gap-2 rounded-lg px-4 text-sm font-semibold transition ${view === "KANBAN" ? "bg-white text-blue-600 shadow-sm" : "text-slate-600"
+                        }`}
                     >
                       <LayoutGrid size={16} /> Kanban
                     </button>
                     <button
                       onClick={() => setView("LIST")}
-                      className={`inline-flex items-center gap-2 rounded-lg px-4 text-sm font-semibold transition ${
-                        view === "LIST" ? "bg-white text-blue-600 shadow-sm" : "text-slate-600"
-                      }`}
+                      className={`inline-flex items-center gap-2 rounded-lg px-4 text-sm font-semibold transition ${view === "LIST" ? "bg-white text-blue-600 shadow-sm" : "text-slate-600"
+                        }`}
                     >
                       <List size={16} /> List
                     </button>
@@ -490,8 +517,8 @@ export default function AllProject() {
               {view === "KANBAN" ? (
                 <div className="grid grid-cols-1 gap-4 min-[700px]:grid-cols-2 xl:grid-cols-3">
                   {KANBAN_COLUMNS.map((column) => (
-                    <section 
-                      key={column.status} 
+                    <section
+                      key={column.status}
                       className="rounded-2xl border border-slate-200 bg-white shadow-sm"
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={(e) => {
@@ -697,7 +724,7 @@ export default function AllProject() {
           task={activeTask}
           comments={comments}
           comment={comment}
-          isAdmin={isAdmin}
+          isAdmin={canManageProjects}
           onCommentChange={setComment}
           onClose={() => {
             setOpenTaskModal(false);

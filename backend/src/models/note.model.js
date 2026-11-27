@@ -21,7 +21,7 @@ module.exports.createNote = async ({ projectName, note, userId }) => {
 module.exports.getAllNotes = async () => {
   const [rows] = await pool.execute(
     `
-    SELECT id, project_name, note, created_by, updated_by, created_at, updated_at
+    SELECT id, project_name, note, is_completed, created_by, updated_by, created_at, updated_at
     FROM notes
     ORDER BY id DESC
     `
@@ -33,7 +33,7 @@ module.exports.getAllNotes = async () => {
 module.exports.getNoteById = async (id) => {
   const [rows] = await pool.execute(
     `
-    SELECT id, project_name, note, created_by, updated_by, created_at, updated_at
+    SELECT id, project_name, note, is_completed, created_by, updated_by, created_at, updated_at
     FROM notes
     WHERE id = ?
     LIMIT 1
@@ -44,7 +44,8 @@ module.exports.getNoteById = async (id) => {
   return rows[0] || null;
 };
 
-module.exports.updateNoteById = async (id, { projectName, note, userId }) => {
+module.exports.updateNoteById = async (id, payload) => {
+  const { projectName, note, userId } = payload;
   const fields = [];
   const values = [];
 
@@ -56,6 +57,11 @@ module.exports.updateNoteById = async (id, { projectName, note, userId }) => {
   if (note !== undefined) {
     fields.push("note = ?");
     values.push(note);
+  }
+
+  if (payload.is_completed !== undefined) {
+    fields.push("is_completed = ?");
+    values.push(payload.is_completed);
   }
 
   if (userId !== undefined) {

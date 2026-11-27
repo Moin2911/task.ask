@@ -2,16 +2,22 @@ const {
   getAllProjects,
   getProjectsByUser,
   createProject,
+  updateProject,
   deleteProject,
   upsertProjectMaster,
   getProjectMasterByProjectId,
 } = require("../models/project.model.js");
 
+const parseShowInGrid = (value, fallback = true) => {
+  if (value === undefined || value === null) return fallback;
+  return value === true || value === 1 || ["true", "1"].includes(String(value).toLowerCase());
+};
+
 module.exports.getProjectsService = async (user, options = {}) => {
   const role = String(user?.role || "").trim().toLowerCase();
   const scope = String(options?.scope || "").trim().toLowerCase();
 
-  if (role === "admin" || scope === "all") {
+  if (role === "admin" || role === "manager" || scope === "all") {
     return await getAllProjects();
   }
 
@@ -28,7 +34,8 @@ module.exports.createProjectService = async (data, user) => {
     };
   }
 
-  if (!data.name) {
+  const name = String(data.name || "").trim();
+  if (!name) {
     throw {
       status: 400,
       message: "Project name is required"
@@ -36,12 +43,68 @@ module.exports.createProjectService = async (data, user) => {
   }
 
   const project = await createProject({
-    name: data.name,
+    name,
     description: data.description || "",
-    status: data.status || "active"
+    status: data.status || "active",
+    show_in_grid: parseShowInGrid(data.show_in_grid),
   });
 
   return project;
+};
+
+module.exports.updateProjectService = async (projectId, data, user) => {
+  if (user.role !== "admin") {
+    throw {
+      status: 403,
+      message: "Only admin can update projects",
+    };
+  }
+
+  const numericId = Number(projectId);
+  if (!numericId || Number.isNaN(numericId)) {
+    throw {
+      status: 400,
+      message: "Valid project ID is required",
+    };
+  }
+
+  const allProjects = await getAllProjects();
+  const existingProject = allProjects.find((project) => Number(project.id) === numericId);
+  if (!existingProject) {
+    throw {
+      status: 404,
+      message: "Project not found",
+    };
+  }
+
+  const name = String(data.name ?? existingProject.name).trim();
+  if (!name) {
+    throw {
+      status: 400,
+      message: "Project name is required",
+    };
+  }
+
+  const showInGrid = parseShowInGrid(
+    data.show_in_grid,
+    Number(existingProject.show_in_grid) !== 0,
+  );
+
+  await updateProject(numericId, {
+    name,
+    description: String(data.description ?? existingProject.description ?? ""),
+    status: String(data.status ?? existingProject.status ?? "active"),
+    show_in_grid: showInGrid,
+    previous_name: existingProject.name,
+  });
+
+  return {
+    id: numericId,
+    name,
+    description: String(data.description ?? existingProject.description ?? ""),
+    status: String(data.status ?? existingProject.status ?? "active"),
+    show_in_grid: showInGrid ? 1 : 0,
+  };
 };
 
 module.exports.upsertProjectMasterService = async (data, user) => {

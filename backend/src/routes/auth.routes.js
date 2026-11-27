@@ -121,7 +121,7 @@ router.get("/employee/:id", getEmployeeByIdController);
  *                 example: 123456
  *               role:
  *                 type: string
- *                 enum: [admin, developer]
+ *                 enum: [admin, developer, employee, manager]
  *                 example: admin
  *               phone:
  *                 type: string
@@ -130,6 +130,12 @@ router.get("/employee/:id", getEmployeeByIdController);
  *                 type: integer
  *                 example: 1
  *                 description: Assigned project ID (optional)
+ *               project_ids:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 example: [1, 2]
+ *                 description: Multiple assigned project IDs (optional)
  *               priority:
  *                 type: string
  *                 enum: [low, medium, high]
@@ -175,6 +181,8 @@ router.post("/register", employeeFiles, registerController);
  *         description: Login successful
  *       401:
  *         description: Invalid credentials
+ *       500:
+ *         description: Internal server error
  */
 router.post("/login", loginController);
 
@@ -204,10 +212,168 @@ router.post("/login", loginController);
  *         description: Internal server error
  */
 router.delete("/employee/:id", deleteEmployeeController);
+
+/**
+ * @swagger
+ * /api/auth/employee/{id}:
+ *   patch:
+ *     summary: Update an employee by ID
+ *     tags: [Employee]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Employee ID to update
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Rahul Kumar
+ *               email:
+ *                 type: string
+ *                 example: rahul@test.com
+ *               phone:
+ *                 type: string
+ *                 example: "9876543210"
+ *               role:
+ *                 type: string
+ *                 enum: [admin, developer, employee, manager]
+ *                 example: developer
+ *               project_id:
+ *                 type: integer
+ *                 example: 2
+ *               project_ids:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 example: [2, 4]
+ *               priority:
+ *                 type: string
+ *                 enum: [low, medium, high]
+ *                 example: medium
+ *               aadhar_file:
+ *                 type: string
+ *                 format: binary
+ *               pan_file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Employee updated successfully
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Employee not found
+ *       500:
+ *         description: Internal server error
+ */
 router.patch("/employee/:id", employeeFiles, updateEmployeeController);
 
+/**
+ * @swagger
+ * /api/auth/forgot-password:
+ *   post:
+ *     summary: Send OTP for password reset
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: rahul@test.com
+ *     responses:
+ *       200:
+ *         description: OTP sent successfully
+ *       400:
+ *         description: Invalid request
+ *       500:
+ *         description: Internal server error
+ */
 router.post("/forgot-password", forgotPasswordController);
+
+/**
+ * @swagger
+ * /api/auth/verify-otp:
+ *   post:
+ *     summary: Verify password reset OTP
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - otp
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: rahul@test.com
+ *               otp:
+ *                 type: string
+ *                 example: "123456"
+ *     responses:
+ *       200:
+ *         description: OTP verified successfully
+ *       400:
+ *         description: Invalid or expired OTP
+ *       500:
+ *         description: Internal server error
+ */
 router.post("/verify-otp", verifyOTPController);
+
+/**
+ * @swagger
+ * /api/auth/reset-password:
+ *   post:
+ *     summary: Reset password after OTP verification
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - otp
+ *               - newPassword
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 example: rahul@test.com
+ *               otp:
+ *                 type: string
+ *                 example: "123456"
+ *               newPassword:
+ *                 type: string
+ *                 example: NewPass@123
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *       400:
+ *         description: Invalid request
+ *       500:
+ *         description: Internal server error
+ */
 router.post("/reset-password", resetPasswordController);
 
 module.exports = router;

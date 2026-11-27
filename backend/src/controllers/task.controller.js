@@ -381,6 +381,8 @@ module.exports.getTaskHistoryController = async (req, res) => {
   try {
     const filters = {
       date: req.query.date,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
       userId: req.query.userId // Admin can pass this
     };
 

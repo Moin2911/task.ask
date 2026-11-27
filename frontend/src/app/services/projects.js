@@ -2,6 +2,10 @@ import axios from "utils/axios";
 
 export const PROJECTS_UPDATED_EVENT = "askinnovation:projects-updated";
 
+export const notifyProjectsUpdated = (detail) => {
+  window.dispatchEvent(new CustomEvent(PROJECTS_UPDATED_EVENT, { detail }));
+};
+
 const getAuthToken = () => window.localStorage.getItem("authToken");
 
 const getAuthHeaders = () => {
@@ -19,6 +23,16 @@ export const getProjects = async () => {
 
 export const createProject = async (payload) => {
   const response = await axios.post("/projects", payload, {
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+    },
+  });
+  return response?.data;
+};
+
+export const updateProject = async (id, payload) => {
+  const response = await axios.put(`/projects/${id}`, payload, {
     headers: {
       "Content-Type": "application/json",
       ...getAuthHeaders(),

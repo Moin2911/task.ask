@@ -12,8 +12,9 @@ const options = {
     servers: [
       {
         url: "http://localhost:3000",
-        // url: "https://task.askinnovations.co.in/"
-
+      },
+      {
+        url: "https://task.askinnovations.co.in/"
       }
     ],
 
@@ -30,7 +31,7 @@ const options = {
 
   // files to scan
   apis: [
-    path.join(process.cwd(), "src/routes/*.js")
+    path.join(__dirname, "../routes/*.js")
   ]
 };
 

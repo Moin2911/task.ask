@@ -4,35 +4,68 @@ const {
   createUser,
   findUserByEmail,
   deleteUserById,
-    getAllEmployees,
+  getAllEmployees,
   getEmployeeById,
   updateEmployeeById,
   setUserOTP,
   findUserByOTP,
-  resetUserPassword
+  resetUserPassword,
+  setUserProjectAssignments,
+  parseIdList,
 } = require("../models/user.model.js");
 const { sendMail } = require("../utils/mail.util.js");
 
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-const ALLOWED_ROLES = ["admin", "developer"];
+const ALLOWED_ROLES = ["admin", "developer", "employee", "manager"];
+
+const normalizeRole = (value) => String(value || "").trim().toLowerCase();
+
+const normalizeProjectIds = (data = {}) => {
+  const rawProjectIds =
+    data.project_ids ??
+    data.projectIds ??
+    data["project_ids[]"] ??
+    data.project_id;
+
+  return parseIdList(rawProjectIds);
+};
+
+const hasProjectAssignmentPayload = (data = {}) =>
+  Object.prototype.hasOwnProperty.call(data, "project_ids") ||
+  Object.prototype.hasOwnProperty.call(data, "projectIds") ||
+  Object.prototype.hasOwnProperty.call(data, "project_ids[]") ||
+  Object.prototype.hasOwnProperty.call(data, "project_id");
 
 module.exports.registerService = async (data) => {
   try {
-    if (!ALLOWED_ROLES.includes(data.role)) {
+    const role = normalizeRole(data.role);
+
+    if (!ALLOWED_ROLES.includes(role)) {
       throw {
         status: 400,
         message: "This role is not allowed"
       };
     }
 
+  const projectIds = normalizeProjectIds(data);
+  const primaryProjectId = projectIds[0] || (data.project_id ? Number(data.project_id) : null);
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
-    return await createUser({
+    const user = await createUser({
       ...data,
+      role,
+      project_id: primaryProjectId || null,
       password: hashedPassword
     });
+
+    await setUserProjectAssignments(user.id, projectIds.length > 0 ? projectIds : primaryProjectId ? [primaryProjectId] : []);
+
+    return {
+      ...user,
+      project_ids: projectIds.length > 0 ? projectIds : primaryProjectId ? [primaryProjectId] : [],
+    };
   } catch (err) {
     if (err.code === "ER_DUP_ENTRY") {
       throw {
@@ -59,7 +92,7 @@ module.exports.loginService = async ({ email, password }) => {
     {
       id: user.id,
       role: user.role,
-       project_id: user.project_id  
+      project_id: user.project_id
     },
     JWT_SECRET,
     { expiresIn: "365d" }
@@ -67,7 +100,9 @@ module.exports.loginService = async ({ email, password }) => {
   return {
     id: user.id,
     email: user.email,
+    name: user.name,
     role: user.role,
+    project_id: user.project_id,
     token
   };
 };
@@ -104,7 +139,7 @@ exports.updateEmployeeService = async (id, data = {}) => {
   const fields = {};
   if (data.name !== undefined) fields.name = data.name;
   if (data.email !== undefined) fields.email = data.email;
-  if (data.role !== undefined) fields.role = data.role;
+  if (data.role !== undefined) fields.role = normalizeRole(data.role);
   if (data.phone !== undefined) fields.phone = data.phone;
   if (data.project_id !== undefined) fields.project_id = data.project_id;
   if (data.priority !== undefined) fields.priority = data.priority;
@@ -119,8 +154,29 @@ exports.updateEmployeeService = async (id, data = {}) => {
     fields.password = await bcrypt.hash(data.password, 10);
   }
 
-  const updated = await updateEmployeeById(id, fields);
-  if (!updated) {
+  const projectIds = normalizeProjectIds(data);
+  const hasProjectAssignmentChange = hasProjectAssignmentPayload(data);
+
+  let updated = 0;
+  if (Object.keys(fields).length > 0) {
+    updated = await updateEmployeeById(id, fields);
+    if (!updated) {
+      throw { status: 400, message: "No changes applied" };
+    }
+  }
+
+  if (hasProjectAssignmentChange) {
+    await setUserProjectAssignments(
+      id,
+      projectIds.length > 0
+        ? projectIds
+        : data.project_id
+          ? [Number(data.project_id)]
+          : [],
+    );
+  }
+
+  if (!updated && !hasProjectAssignmentChange) {
     throw { status: 400, message: "No changes applied" };
   }
 
